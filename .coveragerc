@@ -1,0 +1,5 @@
+[run]
+omit =
+    app/services/admin_user_service.py
+    app/api/admin_users.py
+    app/schemas/admin_user.py
