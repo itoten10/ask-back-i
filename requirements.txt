@@ -20,3 +20,5 @@ pyotp>=2.9.0
 qrcode[pil]>=7.4.2
 google-auth>=2.23.0
 cryptography>=41.0.0
+# SQLAlchemy async support
+greenlet>=3.0.0
