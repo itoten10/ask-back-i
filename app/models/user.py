@@ -77,6 +77,9 @@ class User(Base):
     )
     sessions: Mapped[list["UserSession"]] = relationship(back_populates="user")
     login_logs: Mapped[list["LoginLog"]] = relationship(back_populates="user")
+    posts: Mapped[list["Post"]] = relationship(back_populates="user")  # type: ignore
+    sent_letters: Mapped[list["ThanksLetter"]] = relationship("ThanksLetter", foreign_keys="ThanksLetter.sender_user_id", back_populates="sender")  # type: ignore
+    received_letters: Mapped[list["ThanksLetter"]] = relationship("ThanksLetter", foreign_keys="ThanksLetter.receiver_user_id", back_populates="receiver")  # type: ignore
 
 
 class UserGoogleAccount(Base):

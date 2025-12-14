@@ -31,6 +31,29 @@ class LocalUserCreateRequest(UserCreateRequest):
     password: str = Field(..., min_length=4)
 
 
+class UserUpdateRequest(BaseModel):
+    full_name: str
+    full_name_kana: Optional[str] = None
+    email: EmailStr
+    role: str = Field(..., description="student / teacher / admin")
+    gender: str = "unknown"
+    school_person_id: Optional[str] = Field(
+        default=None, min_length=6, max_length=6, description="6-digit string"
+    )
+    date_of_birth: Optional[date] = None
+    grade: Optional[int] = None
+    class_name: Optional[str] = None
+    is_active: bool = True
+
+    @validator("school_person_id")
+    def validate_school_person_id(cls, v):
+        if v is None:
+            return v
+        if len(v) != 6 or not v.isdigit():
+            raise ValueError("school_person_id must be 6 digits")
+        return v
+
+
 class UserListItem(BaseModel):
     id: int
     school_person_id: Optional[str]

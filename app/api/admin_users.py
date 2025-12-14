@@ -11,6 +11,7 @@ from app.schemas.admin_user import (
     UserCreateRequest,
     UserDeleteResponse,
     UserListResponse,
+    UserUpdateRequest,
 )
 from app.services import admin_user_service
 
@@ -60,6 +61,17 @@ async def create_local_user(
     admin_user=Depends(deps.get_admin_user),  # noqa: B008
 ):
     user = await admin_user_service.create_local_user(db, payload)
+    return UserListResponse(items=[user], total=1, page=1, page_size=1)
+
+
+@router.put("/users/{user_id}", response_model=UserListResponse)
+async def update_user(
+    user_id: int,
+    payload: UserUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    admin_user=Depends(deps.get_admin_user),  # noqa: B008
+):
+    user = await admin_user_service.update_user(db, user_id, payload)
     return UserListResponse(items=[user], total=1, page=1, page_size=1)
 
 

@@ -48,8 +48,12 @@ class GoogleLoginRequest(BaseModel):
 class GoogleLoginResponse(BaseModel):
     """Googleログイン後のレスポンス（2FA設定状態と一時トークン）"""
     is_2fa_enabled: bool
-    temp_token: str
+    temp_token: Optional[str] = None
     user_id: int
+    # 2FA無効時に直接発行されるトークン
+    access_token: Optional[str] = None
+    token_type: Optional[str] = None
+    expires_in: Optional[int] = None
 
 
 class TwoFASetupResponse(BaseModel):

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,14 +58,15 @@ async def verify_temp_token_dependency(
     return user, temp_token
 
 
-@router.post("/auth/google-login", response_model=GoogleLoginResponse)
+@router.post("/auth/google-login")
 async def google_login(
+    response: Response,
     payload: GoogleLoginRequest,
     db: AsyncSession = Depends(get_db),
 ):
     """
     Google ID Tokenベースのログイン
-    ユーザーを特定または作成し、一時トークンを発行
+    2FA無効の場合は直接トークン発行、有効な場合は一時トークン発行
     """
     # Google ID Token検証
     if not verify_google_id_token(payload.id_token, payload.email):
@@ -73,17 +74,52 @@ async def google_login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid Google ID Token",
         )
-    
+
     # ユーザー取得または作成
     user = await user_repository.create_or_get_user(
         db, email=payload.email, name=None  # 名前はGoogleから取得可能だが簡略化
     )
     await db.commit()
-    
-    # 一時トークン発行
+
+    # 2FAが無効の場合は直接JWTトークンを発行して認証完了
+    if not user.is_2fa_enabled:
+        from app.models.user import AuthTypeEnum
+
+        result = await auth_service._issue_tokens(
+            user=user,
+            auth_type=AuthTypeEnum.google,
+            db=db,
+            ip_address=None,
+            user_agent=None,
+        )
+        await db.commit()
+
+        # refresh_tokenをCookieにセット
+        response.set_cookie(
+            key=settings.refresh_cookie_name,
+            value=result.refresh_token,
+            httponly=True,
+            secure=settings.refresh_cookie_secure,
+            samesite=settings.refresh_cookie_samesite,
+            path=settings.refresh_cookie_path,
+            domain=settings.refresh_cookie_domain,
+            max_age=settings.refresh_token_ttl_days * 24 * 60 * 60,
+        )
+
+        # 2FA無効の場合、temp_tokenの代わりにaccess_tokenを返す
+        return GoogleLoginResponse(
+            is_2fa_enabled=False,
+            temp_token=None,  # temp_tokenはNoneにする
+            user_id=user.id,
+            access_token=result.token.access_token,  # access_tokenを返す
+            token_type="bearer",
+            expires_in=result.token.expires_in,
+        )
+
+    # 2FA有効の場合は一時トークン発行
     temp_token = await temp_token_repository.create_temp_token(db, payload.email)
     await db.commit()
-    
+
     return GoogleLoginResponse(
         is_2fa_enabled=user.is_2fa_enabled,
         temp_token=temp_token.token,
@@ -252,10 +288,10 @@ async def verify_existing_2fa(
     
     # 一時トークン無効化
     await temp_token_repository.invalidate_temp_token(db, temp_token)
-    
+
     # JWTアクセストークン発行
     from app.models.user import AuthTypeEnum
-    
+
     result = await auth_service._issue_tokens(
         user=user,
         auth_type=AuthTypeEnum.google,
@@ -264,7 +300,77 @@ async def verify_existing_2fa(
         user_agent=None,
     )
     await db.commit()
-    
+
+    return TokenResponse(
+        access_token=result.token.access_token,
+        token_type="bearer",
+        expires_in=result.token.expires_in,
+    )
+
+
+@router.post("/auth/exchange-token")
+async def exchange_token(
+    response: Response,
+    authorization: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    フロントエンドからaccess_tokenを受け取り、refresh_tokenクッキーを設定する
+    NextAuthのサーバーサイドコールバック内で取得したクッキーがクライアントに転送されないため、
+    クライアント側から再度リクエストしてrefresh_tokenクッキーを設定する
+    """
+    import jwt
+    from app.models.user import AuthTypeEnum
+
+    # access_tokenを検証
+    try:
+        payload = jwt.decode(
+            authorization.credentials,
+            settings.jwt_secret,
+            algorithms=["HS256"]
+        )
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token",
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid token: {str(e)}",
+        )
+
+    # ユーザー取得
+    user = await user_repository.find_by_id(db, int(user_id))
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    # 新しいトークンペアを発行
+    result = await auth_service._issue_tokens(
+        user=user,
+        auth_type=AuthTypeEnum.google,
+        db=db,
+        ip_address=None,
+        user_agent=None,
+    )
+    await db.commit()
+
+    # refresh_tokenをCookieにセット
+    response.set_cookie(
+        key=settings.refresh_cookie_name,
+        value=result.refresh_token,
+        httponly=True,
+        secure=settings.refresh_cookie_secure,
+        samesite=settings.refresh_cookie_samesite,
+        path=settings.refresh_cookie_path,
+        domain=settings.refresh_cookie_domain,
+        max_age=settings.refresh_token_ttl_days * 24 * 60 * 60,
+    )
+
     return TokenResponse(
         access_token=result.token.access_token,
         token_type="bearer",

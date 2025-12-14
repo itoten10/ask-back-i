@@ -14,6 +14,7 @@ from app.schemas.admin_user import (
     BulkRowResult,
     LocalUserCreateRequest,
     UserCreateRequest,
+    UserUpdateRequest,
 )
 
 
@@ -224,6 +225,62 @@ async def soft_delete_user(db: AsyncSession, user_id: int, reason: Optional[str]
     user.is_active = False
     user.deleted_at = now_utc()
     user.deleted_reason = reason or "manual delete from admin UI"
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+async def update_user(db: AsyncSession, user_id: int, payload: UserUpdateRequest) -> User:
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
+
+    role_enum = _parse_role(payload.role)
+    gender_enum = _parse_gender(payload.gender)
+    school_person_id = _validate_school_person_id(payload.school_person_id)
+
+    # Check email uniqueness (exclude current user)
+    if payload.email != user.email:
+        stmt = select(User).where(User.email == payload.email, User.id != user_id)
+        existing = (await db.execute(stmt)).scalar_one_or_none()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="email already exists",
+            )
+
+    # Check school_person_id uniqueness (exclude current user)
+    if school_person_id and school_person_id != user.school_person_id:
+        stmt = select(User).where(User.school_person_id == school_person_id, User.id != user_id)
+        existing = (await db.execute(stmt)).scalar_one_or_none()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="school_person_id already exists",
+            )
+
+    # Validate student requires grade
+    if role_enum == RoleEnum.student and payload.grade is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="grade is required for student",
+        )
+
+    # Clear grade/class for non-students
+    grade = payload.grade if role_enum == RoleEnum.student else None
+    class_name = payload.class_name if role_enum == RoleEnum.student else None
+
+    user.full_name = payload.full_name
+    user.full_name_kana = payload.full_name_kana
+    user.email = payload.email
+    user.role = role_enum
+    user.gender = gender_enum
+    user.school_person_id = school_person_id
+    user.date_of_birth = payload.date_of_birth
+    user.grade = grade
+    user.class_name = class_name
+    user.is_active = payload.is_active
+
     await db.commit()
     await db.refresh(user)
     return user

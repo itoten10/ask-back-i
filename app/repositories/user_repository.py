@@ -92,6 +92,13 @@ async def create_or_get_user(
     return user
 
 
+async def find_by_id(db: AsyncSession, user_id: int) -> User | None:
+    """ユーザーIDでユーザーを取得"""
+    stmt = select(User).where(User.id == user_id)
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
 async def enable_2fa(
     db: AsyncSession, user: User, totp_secret: str
 ) -> None:
