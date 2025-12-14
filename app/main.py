@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from app.api import admin_users, auth, users, two_fa, posts, admin_database, thanks_letters, dashboard
+from app.api import admin_users, auth, users, two_fa, posts, admin_database, thanks_letters, dashboard, ability_analysis
 from app.core.config import settings
 from app.core.database import engine
 
@@ -118,6 +118,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_database.router, prefix="/admin/database", tags=["admin-database"])
     app.include_router(thanks_letters.router, prefix="/thanks-letters", tags=["thanks-letters"])
     app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
+    app.include_router(ability_analysis.router)
     return app
 
 

@@ -51,6 +51,10 @@ class Settings:
     # アクセストークンはフロントのメモリ保持のみ（Cookieへは保存しない）
     access_token_storage: str = "memory"
 
+    # OpenAI API設定
+    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
+    openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
     # 2FA関連設定
     temp_token_expiration_minutes: int = int(os.getenv("TEMP_TOKEN_EXPIRATION_MINUTES", "10"))
     rate_limit_enabled: bool = _get_bool("RATE_LIMIT_ENABLED", True)
