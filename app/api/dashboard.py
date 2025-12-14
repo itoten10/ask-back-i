@@ -1,17 +1,43 @@
 """ダッシュボードAPI（管理者・教師用）"""
+from datetime import datetime, timedelta
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
-from app.models.post import Post
+from app.models.post import Post, QuestionStateChangeType
 from app.models.post_ability_point import PostAbilityPoint
 from app.models.thanks_letter import ThanksLetter
 from app.models.thanks_letter_ability_point import ThanksLetterAbilityPoint
 from app.models.non_cog_ability import NonCogAbility
 from app.models.user import User, RoleEnum
+
+# 介入フラグの閾値（投稿がない日数）
+INTERVENTION_DAYS_THRESHOLD = 14
+
+# フェーズラベルの変換マッピング（英語→日本語）
+PHASE_LABEL_MAP = {
+    # 旧英語フェーズ名
+    "theme_setting": "テーマ設定",
+    "problem_setting": "課題設定",
+    "information_gathering": "情報収集",
+    "analysis": "整理・分析",
+    "summary": "まとめ・表現",
+    "presentation": "発表準備",
+    # 別の旧英語フェーズ名
+    "planning": "課題設定",
+    "execution": "情報収集",
+    "verification": "整理・分析",
+    # 日本語はそのまま返す
+    "テーマ設定": "テーマ設定",
+    "課題設定": "課題設定",
+    "情報収集": "情報収集",
+    "整理・分析": "整理・分析",
+    "まとめ・表現": "まとめ・表現",
+    "発表準備": "発表準備",
+}
 
 router = APIRouter()
 
@@ -37,6 +63,9 @@ async def get_learning_progress(
     students = students_result.scalars().all()
 
     progress_data = []
+
+    # 介入判定用の閾値日時（現在から2週間前）
+    intervention_threshold = datetime.utcnow() - timedelta(days=INTERVENTION_DAYS_THRESHOLD)
 
     for student in students:
         # 投稿数と最終投稿日を取得
@@ -75,14 +104,39 @@ async def get_learning_progress(
             latest_post_result = await db.execute(latest_post_stmt)
             latest_phase = latest_post_result.scalar()
 
+        # 問いの変更回数をカウント（question_state_change_type が none 以外）
+        question_change_stmt = select(func.count(Post.id)).where(
+            Post.user_id == student.id,
+            Post.deleted_at.is_(None),
+            Post.question_state_change_type != QuestionStateChangeType.none
+        )
+        question_change_result = await db.execute(question_change_stmt)
+        question_change_count = question_change_result.scalar() or 0
+
+        # 介入フラグの判定（2週間以上投稿がない場合にTRUE）
+        intervention_flag = False
+        if last_posted_at is None:
+            # 一度も投稿がない場合は介入が必要
+            intervention_flag = True
+        elif last_posted_at < intervention_threshold:
+            # 最終投稿が2週間以上前の場合
+            intervention_flag = True
+
+        # フェーズラベルを日本語に変換
+        display_phase = "未投稿"
+        if latest_phase:
+            display_phase = PHASE_LABEL_MAP.get(latest_phase, latest_phase)
+
         progress_data.append({
             "user_id": student.id,
             "full_name": student.full_name,
             "grade": student.grade,
             "class_name": student.class_name,
-            "phase": latest_phase or "未投稿",
+            "phase": display_phase,
             "post_count": total_posts,
+            "question_change_count": question_change_count,
             "last_posted_at": last_posted_at.isoformat() if last_posted_at else None,
+            "intervention_flag": intervention_flag,
         })
 
     return progress_data
