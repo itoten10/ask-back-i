@@ -2,9 +2,9 @@
 更新内容:
 - 探求フェーズ: テーマ設定、課題設定、情報収集、整理・分析、まとめ・表現、発表準備
 - 投稿日時: 12/17の2週間以内（12/3以降）に最終投稿がある人を多数に
-- 投稿数: 4〜15件のばらつき
-- 能力バランス: より論理的な組み合わせに
-- 感謝の手紙: 1.5pt
+- 投稿数: 8〜20件に増やす（一人最大20件）
+- 能力バランス: よりバランスの取れたスコアに（緑・黄色・赤が均等に近づくよう調整）
+- 感謝の手紙: 1.5pt、手紙数も増加
 """
 import asyncio
 import ssl
@@ -51,32 +51,33 @@ ABILITY_NAMES = {
     7: "完遂する力"
 }
 
-# 各生徒の個性（得意な非認知能力を2-3個設定）- バランス調整版
+# 各生徒の個性（得意な非認知能力を2-4個設定）- 全7能力をバランスよく分散
+# 1:課題設定力, 2:情報収集力, 3:巻き込む力, 4:対話する力, 5:実行する力, 6:謙虚である力, 7:完遂する力
 STUDENT_PERSONALITIES = {
-    # 既存生徒 (user_id -> info)
-    2:  {"name": "新井 太郎", "strong": [1, 2], "theme": "多文化共生", "post_count": 8, "active": True},
-    10: {"name": "柳川 健太", "strong": [5, 7], "theme": "再生可能エネルギー", "post_count": 12, "active": True},
-    11: {"name": "柳川 優子", "strong": [3, 4], "theme": "空き家問題", "post_count": 15, "active": True},
-    14: {"name": "柳川 裕太", "strong": [2, 6], "theme": "フードロス", "post_count": 6, "active": True},
-    18: {"name": "伊藤 生徒", "strong": [1, 4, 6], "theme": "高齢者交流", "post_count": 10, "active": True},
-    19: {"name": "髙橋 由華", "strong": [3, 5], "theme": "伝統文化継承", "post_count": 4, "active": False},  # 介入フラグ対象
-    21: {"name": "江藤 泰平", "strong": [2, 7], "theme": "海洋プラスチック", "post_count": 11, "active": True},
-    22: {"name": "田中 美咲", "strong": [1, 3, 5], "theme": "観光まちづくり", "post_count": 9, "active": True},
-    23: {"name": "山本 結衣", "strong": [4, 6, 7], "theme": "障がい者共生", "post_count": 7, "active": True},
+    # 既存生徒 (user_id -> info) - 全能力がカバーされるよう調整
+    2:  {"name": "新井 太郎", "strong": [1, 2, 4], "theme": "多文化共生", "post_count": 14, "active": True},
+    10: {"name": "柳川 健太", "strong": [1, 5, 7], "theme": "再生可能エネルギー", "post_count": 18, "active": True},
+    11: {"name": "柳川 優子", "strong": [2, 3, 4], "theme": "空き家問題", "post_count": 20, "active": True},
+    14: {"name": "柳川 裕太", "strong": [1, 2, 6], "theme": "フードロス", "post_count": 12, "active": True},
+    18: {"name": "伊藤 生徒", "strong": [1, 3, 6], "theme": "高齢者交流", "post_count": 16, "active": True},
+    19: {"name": "髙橋 由華", "strong": [2, 3, 5], "theme": "伝統文化継承", "post_count": 8, "active": False},  # 介入フラグ対象
+    21: {"name": "江藤 泰平", "strong": [1, 2, 7], "theme": "海洋プラスチック", "post_count": 17, "active": True},
+    22: {"name": "田中 美咲", "strong": [2, 3, 5], "theme": "観光まちづくり", "post_count": 15, "active": True},
+    23: {"name": "山本 結衣", "strong": [1, 3, 7], "theme": "障がい者共生", "post_count": 13, "active": True},
 }
 
-# 新規生徒10人（個性も設定、バランス調整）
+# 新規生徒10人（個性も設定、課題設定力(1)・情報収集力(2)・巻き込む力(3)を多めに）
 NEW_STUDENTS = [
-    {"name": "佐藤 一郎", "name_kana": "サトウ イチロウ", "grade": 1, "class": "2", "school_id": "100007", "login": "student10", "email": "student10@test.example.com", "strong": [1, 5], "theme": "地域防災", "post_count": 10, "active": True},
-    {"name": "鈴木 花子", "name_kana": "スズキ ハナコ", "grade": 1, "class": "3", "school_id": "100008", "login": "student11", "email": "student11@test.example.com", "strong": [2, 4], "theme": "子どもの居場所", "post_count": 7, "active": True},
-    {"name": "田村 健二", "name_kana": "タムラ ケンジ", "grade": 1, "class": "5", "school_id": "100009", "login": "student12", "email": "student12@test.example.com", "strong": [5, 7], "theme": "SNSリテラシー", "post_count": 13, "active": True},
-    {"name": "山口 美優", "name_kana": "ヤマグチ ミユ", "grade": 2, "class": "1", "school_id": "200004", "login": "student13", "email": "student13@test.example.com", "strong": [3, 4, 6], "theme": "地域医療", "post_count": 5, "active": True},
-    {"name": "中村 翔太", "name_kana": "ナカムラ ショウタ", "grade": 2, "class": "3", "school_id": "200005", "login": "student14", "email": "student14@test.example.com", "strong": [1, 2, 7], "theme": "農業の未来", "post_count": 14, "active": True},
-    {"name": "小林 あかり", "name_kana": "コバヤシ アカリ", "grade": 2, "class": "5", "school_id": "200006", "login": "student15", "email": "student15@test.example.com", "strong": [3, 5], "theme": "ジェンダー平等", "post_count": 4, "active": False},  # 介入フラグ対象
-    {"name": "加藤 大輝", "name_kana": "カトウ ダイキ", "grade": 3, "class": "2", "school_id": "300001", "login": "student16", "email": "student16@test.example.com", "strong": [2, 6, 7], "theme": "公共交通", "post_count": 11, "active": True},
-    {"name": "吉川 理沙", "name_kana": "ヨシカワ リサ", "grade": 3, "class": "4", "school_id": "300002", "login": "student17", "email": "student17@test.example.com", "strong": [1, 4], "theme": "動物福祉", "post_count": 8, "active": True},
-    {"name": "松本 陽斗", "name_kana": "マツモト ハルト", "grade": 3, "class": "6", "school_id": "300003", "login": "student18", "email": "student18@test.example.com", "strong": [5, 6, 7], "theme": "地産地消", "post_count": 15, "active": True},
-    {"name": "渡辺 さくら", "name_kana": "ワタナベ サクラ", "grade": 1, "class": "6", "school_id": "100010", "login": "student19", "email": "student19@test.example.com", "strong": [2, 3, 4], "theme": "読書文化", "post_count": 6, "active": False},  # 介入フラグ対象
+    {"name": "佐藤 一郎", "name_kana": "サトウ イチロウ", "grade": 1, "class": "2", "school_id": "100007", "login": "student10", "email": "student10@test.example.com", "strong": [1, 2, 5], "theme": "地域防災", "post_count": 16, "active": True},
+    {"name": "鈴木 花子", "name_kana": "スズキ ハナコ", "grade": 1, "class": "3", "school_id": "100008", "login": "student11", "email": "student11@test.example.com", "strong": [1, 2, 4], "theme": "子どもの居場所", "post_count": 13, "active": True},
+    {"name": "田村 健二", "name_kana": "タムラ ケンジ", "grade": 1, "class": "5", "school_id": "100009", "login": "student12", "email": "student12@test.example.com", "strong": [1, 3, 7], "theme": "SNSリテラシー", "post_count": 19, "active": True},
+    {"name": "山口 美優", "name_kana": "ヤマグチ ミユ", "grade": 2, "class": "1", "school_id": "200004", "login": "student13", "email": "student13@test.example.com", "strong": [2, 3, 6], "theme": "地域医療", "post_count": 11, "active": True},
+    {"name": "中村 翔太", "name_kana": "ナカムラ ショウタ", "grade": 2, "class": "3", "school_id": "200005", "login": "student14", "email": "student14@test.example.com", "strong": [1, 2, 3], "theme": "農業の未来", "post_count": 20, "active": True},
+    {"name": "小林 あかり", "name_kana": "コバヤシ アカリ", "grade": 2, "class": "5", "school_id": "200006", "login": "student15", "email": "student15@test.example.com", "strong": [1, 3, 5], "theme": "ジェンダー平等", "post_count": 9, "active": False},  # 介入フラグ対象
+    {"name": "加藤 大輝", "name_kana": "カトウ ダイキ", "grade": 3, "class": "2", "school_id": "300001", "login": "student16", "email": "student16@test.example.com", "strong": [2, 3, 7], "theme": "公共交通", "post_count": 17, "active": True},
+    {"name": "吉川 理沙", "name_kana": "ヨシカワ リサ", "grade": 3, "class": "4", "school_id": "300002", "login": "student17", "email": "student17@test.example.com", "strong": [1, 2, 4], "theme": "動物福祉", "post_count": 14, "active": True},
+    {"name": "松本 陽斗", "name_kana": "マツモト ハルト", "grade": 3, "class": "6", "school_id": "300003", "login": "student18", "email": "student18@test.example.com", "strong": [2, 3, 5], "theme": "地産地消", "post_count": 20, "active": True},
+    {"name": "渡辺 さくら", "name_kana": "ワタナベ サクラ", "grade": 1, "class": "6", "school_id": "100010", "login": "student19", "email": "student19@test.example.com", "strong": [1, 3, 4], "theme": "読書文化", "post_count": 10, "active": False},  # 介入フラグ対象
 ]
 
 # 各テーマの投稿テンプレート（フェーズごと）
@@ -659,7 +660,7 @@ async def main():
         await db.commit()
         print(f"   {total_posts}件の投稿を作成完了")
 
-        # 4. 投稿に非認知能力ポイントを付与
+        # 4. 投稿に非認知能力ポイントを付与（バランス改善版）
         print("\n4. 投稿に非認知能力ポイントを付与...")
         all_abilities = [1, 2, 3, 4, 5, 6, 7]
 
@@ -668,19 +669,22 @@ async def main():
 
             # 得意な能力は必ず含める
             selected = list(strong_abilities)
-            # 追加で1-2個の能力を選ぶ
+
+            # 追加で1-2個の能力を選ぶ（バランスを取るため確率を上げる）
             others = [a for a in all_abilities if a not in strong_abilities]
-            selected.extend(random.sample(others, random.randint(1, 2)))
+            if random.random() < 0.7:  # 70%の確率で他の能力を追加
+                num_additional = random.choice([1, 2])  # 1-2個追加
+                selected.extend(random.sample(others, min(num_additional, len(others))))
 
             for ability_id in selected:
                 if ability_id in strong_abilities:
-                    # 得意な能力: 高評価（3.5〜5.0）
-                    point = Decimal(str(random.choice([3.5, 4.0, 4.5, 5.0])))
-                    quality = random.randint(4, 5)
+                    # 得意な能力: 高評価（3.0〜4.0）- 少し下げてバランス
+                    point = Decimal(str(random.choice([3.0, 3.5, 4.0, 4.0])))
+                    quality = random.randint(3, 5)
                 else:
-                    # その他: 普通（1.0〜3.0）
-                    point = Decimal(str(random.choice([1.0, 1.5, 2.0, 2.5, 3.0])))
-                    quality = random.randint(1, 3)
+                    # その他: 中程度（2.0〜3.0）- 少し上げてバランス
+                    point = Decimal(str(random.choice([2.0, 2.5, 3.0])))
+                    quality = random.randint(2, 4)
 
                 await db.execute(text("""
                     INSERT INTO post_ability_points (post_id, ability_id, action_index, quality_level, point, created_at)
@@ -697,8 +701,8 @@ async def main():
 
         for sender_id in all_user_ids:
             others = [u for u in all_user_ids if u != sender_id]
-            # 送る手紙の数は2〜5通でばらつき
-            num_letters = random.randint(2, 5)
+            # 送る手紙の数は4〜8通に増加（感謝の手紙も増やす）
+            num_letters = random.randint(4, 8)
             receivers = random.sample(others, min(num_letters, len(others)))
 
             for receiver_id in receivers:

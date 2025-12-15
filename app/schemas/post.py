@@ -44,6 +44,7 @@ class PostResponse(BaseModel):
 
     # ユーザー情報も含める（フロントエンドで表示用）
     user_name: Optional[str] = None
+    user_avatar_url: Optional[str] = None
 
     class Config:
         from_attributes = True

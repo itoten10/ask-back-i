@@ -21,27 +21,34 @@ router = APIRouter(prefix="/posts", tags=["posts"])
 async def get_posts(
     skip: int = 0,
     limit: int = 20,
+    user_id: int | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """投稿一覧を取得（新しい順）"""
+    """投稿一覧を取得（新しい順）。user_idを指定すると特定ユーザーの投稿のみ取得"""
     # 投稿とユーザー情報を結合して取得
     stmt = (
         select(Post)
         .options(joinedload(Post.user))
         .where(Post.deleted_at.is_(None))
-        .order_by(Post.created_at.desc())
-        .offset(skip)
-        .limit(limit)
     )
+
+    # user_idが指定されている場合はフィルタリング
+    if user_id is not None:
+        stmt = stmt.where(Post.user_id == user_id)
+
+    stmt = stmt.order_by(Post.created_at.desc()).offset(skip).limit(limit)
+
     result = await db.execute(stmt)
     posts = result.scalars().unique().all()
 
     # 総数を取得
     count_stmt = select(Post).where(Post.deleted_at.is_(None))
+    if user_id is not None:
+        count_stmt = count_stmt.where(Post.user_id == user_id)
     count_result = await db.execute(count_stmt)
     total = len(count_result.scalars().all())
 
-    # レスポンス用にユーザー名を追加
+    # レスポンス用にユーザー名とアバターURLを追加
     post_responses = []
     for post in posts:
         post_dict = {
@@ -56,6 +63,7 @@ async def get_posts(
             "created_at": post.created_at,
             "updated_at": post.updated_at,
             "user_name": post.user.full_name if post.user else None,
+            "user_avatar_url": post.user.avatar_url if post.user else None,
         }
         post_responses.append(PostResponse(**post_dict))
 
@@ -128,6 +136,7 @@ async def create_post(
         created_at=new_post.created_at,
         updated_at=new_post.updated_at,
         user_name=new_post.user.full_name if new_post.user else None,
+        user_avatar_url=new_post.user.avatar_url if new_post.user else None,
     )
 
 
@@ -159,6 +168,7 @@ async def get_post(
         created_at=post.created_at,
         updated_at=post.updated_at,
         user_name=post.user.full_name if post.user else None,
+        user_avatar_url=post.user.avatar_url if post.user else None,
     )
 
 
@@ -234,4 +244,37 @@ async def update_post(
         created_at=post.created_at,
         updated_at=post.updated_at,
         user_name=post.user.full_name if post.user else None,
+        user_avatar_url=post.user.avatar_url if post.user else None,
     )
+
+
+@router.delete("/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_post(
+    post_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """投稿を削除（論理削除、投稿者本人または管理者のみ）"""
+    # 投稿を取得
+    stmt = select(Post).where(Post.id == post_id, Post.deleted_at.is_(None))
+    result = await db.execute(stmt)
+    post = result.scalar_one_or_none()
+
+    if not post:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Post not found"
+        )
+
+    # 投稿者本人または管理者のみ削除可能
+    if post.user_id != current_user.id and current_user.role != RoleEnum.admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only delete your own posts"
+        )
+
+    # 論理削除
+    post.deleted_at = datetime.utcnow()
+    await db.commit()
+
+    return None

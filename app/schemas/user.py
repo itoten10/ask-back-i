@@ -14,6 +14,7 @@ class UserMe(BaseModel):
     class_name: str | None
     gender: str
     date_of_birth: date | None
+    avatar_url: str | None
 
     class Config:
         from_attributes = True

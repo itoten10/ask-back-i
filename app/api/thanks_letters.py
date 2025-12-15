@@ -209,6 +209,7 @@ async def get_users_for_letter(
             "role": user.role.value,
             "grade": user.grade,
             "class_name": user.class_name,
+            "avatar_url": user.avatar_url,
         }
         for user in users
     ]

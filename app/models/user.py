@@ -55,6 +55,7 @@ class User(Base):
     gender: Mapped[GenderEnum] = mapped_column(
         Enum(GenderEnum), default=GenderEnum.unknown, nullable=False
     )
+    avatar_url: Mapped[str | None] = mapped_column(String(500))  # アバター画像URL
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime)
