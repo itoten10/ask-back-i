@@ -168,16 +168,20 @@ async def create_user(db: AsyncSession, payload: UserCreateRequest) -> User:
 
 async def create_local_user(db: AsyncSession, payload: LocalUserCreateRequest) -> User:
     role_enum = _parse_role(payload.role)
-    if role_enum == RoleEnum.student:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="local account allowed only for teacher/admin",
-        )
     gender_enum = _parse_gender(payload.gender)
     school_person_id = _validate_school_person_id(payload.school_person_id)
 
-    payload.grade = None
-    payload.class_name = None
+    # 生徒以外はgrade/class_nameを無効化
+    if role_enum != RoleEnum.student:
+        payload.grade = None
+        payload.class_name = None
+    else:
+        # 生徒の場合はgradeが必須
+        if payload.grade is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="grade is required for student",
+            )
 
     await _check_unique_email(db, payload.email)
     await _check_unique_school_person_id(db, school_person_id)
@@ -197,8 +201,8 @@ async def create_local_user(db: AsyncSession, payload: LocalUserCreateRequest) -
         gender=gender_enum,
         school_person_id=school_person_id,
         date_of_birth=payload.date_of_birth,
-        grade=None,
-        class_name=None,
+        grade=payload.grade,
+        class_name=payload.class_name,
         is_active=True,
         is_deleted=False,
     )
@@ -218,6 +222,7 @@ async def create_local_user(db: AsyncSession, payload: LocalUserCreateRequest) -
 
 
 async def soft_delete_user(db: AsyncSession, user_id: int, reason: Optional[str]) -> User:
+    """論理削除（後方互換性のため残す）"""
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
@@ -228,6 +233,88 @@ async def soft_delete_user(db: AsyncSession, user_id: int, reason: Optional[str]
     await db.commit()
     await db.refresh(user)
     return user
+
+
+async def hard_delete_user(db: AsyncSession, user_id: int) -> None:
+    """物理削除（DBから完全に削除）"""
+    from app.models.post import Post
+    from app.models.post_ability_point import PostAbilityPoint
+    from app.models.thanks_letter import ThanksLetter
+    from app.models.thanks_letter_ability_point import ThanksLetterAbilityPoint
+    from app.models.user import UserSession, UserGoogleAccount
+
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
+
+    # 関連データを先に削除
+    # 0-1. セッションを削除
+    sessions_stmt = select(UserSession).where(UserSession.user_id == user_id)
+    sessions_result = await db.execute(sessions_stmt)
+    for session in sessions_result.scalars().all():
+        await db.delete(session)
+
+    # 0-2. Googleアカウント情報を削除
+    google_account_stmt = select(UserGoogleAccount).where(UserGoogleAccount.user_id == user_id)
+    google_account_result = await db.execute(google_account_stmt)
+    google_account = google_account_result.scalar_one_or_none()
+    if google_account:
+        await db.delete(google_account)
+
+    # 1. 投稿に紐づく能力ポイントを削除
+    posts_stmt = select(Post.id).where(Post.user_id == user_id)
+    posts_result = await db.execute(posts_stmt)
+    post_ids = [row[0] for row in posts_result.all()]
+
+    if post_ids:
+        for post_id in post_ids:
+            ability_points_stmt = select(PostAbilityPoint).where(PostAbilityPoint.post_id == post_id)
+            ability_points_result = await db.execute(ability_points_stmt)
+            for point in ability_points_result.scalars().all():
+                await db.delete(point)
+
+        # 投稿を削除
+        for post_id in post_ids:
+            post = await db.get(Post, post_id)
+            if post:
+                await db.delete(post)
+
+    # 2. 感謝の手紙に紐づく能力ポイントを削除（送信・受信両方）
+    sent_letters_stmt = select(ThanksLetter.id).where(ThanksLetter.sender_user_id == user_id)
+    sent_result = await db.execute(sent_letters_stmt)
+    sent_letter_ids = [row[0] for row in sent_result.all()]
+
+    received_letters_stmt = select(ThanksLetter.id).where(ThanksLetter.receiver_user_id == user_id)
+    received_result = await db.execute(received_letters_stmt)
+    received_letter_ids = [row[0] for row in received_result.all()]
+
+    all_letter_ids = list(set(sent_letter_ids + received_letter_ids))
+
+    if all_letter_ids:
+        for letter_id in all_letter_ids:
+            ability_points_stmt = select(ThanksLetterAbilityPoint).where(
+                ThanksLetterAbilityPoint.thanks_letter_id == letter_id
+            )
+            ability_points_result = await db.execute(ability_points_stmt)
+            for point in ability_points_result.scalars().all():
+                await db.delete(point)
+
+        # 感謝の手紙を削除
+        for letter_id in all_letter_ids:
+            letter = await db.get(ThanksLetter, letter_id)
+            if letter:
+                await db.delete(letter)
+
+    # 3. ローカルアカウントを削除
+    local_account_stmt = select(UserLocalAccount).where(UserLocalAccount.user_id == user_id)
+    local_account_result = await db.execute(local_account_stmt)
+    local_account = local_account_result.scalar_one_or_none()
+    if local_account:
+        await db.delete(local_account)
+
+    # 4. ユーザーを削除
+    await db.delete(user)
+    await db.commit()
 
 
 async def update_user(db: AsyncSession, user_id: int, payload: UserUpdateRequest) -> User:

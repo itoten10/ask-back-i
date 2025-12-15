@@ -1,6 +1,6 @@
 """投稿と非認知能力の関連モデル"""
 from datetime import datetime
-from sqlalchemy import BigInteger, Column, ForeignKey, Index, Integer, TIMESTAMP
+from sqlalchemy import BigInteger, Column, ForeignKey, Index, Integer, TIMESTAMP, DECIMAL
 from sqlalchemy.orm import relationship
 
 from app.models.base import Base
@@ -20,7 +20,7 @@ class PostAbilityPoint(Base):
     ability_id = Column(BigInteger, ForeignKey("non_cog_abilities.id", ondelete="CASCADE"), nullable=False)
     action_index = Column(Integer, nullable=False, default=0)
     quality_level = Column(Integer, nullable=False, default=1)
-    point = Column(Integer, nullable=False, default=1)
+    point = Column(DECIMAL(5, 1), nullable=False, default=1.0)
     created_at = Column(TIMESTAMP, nullable=False, default=datetime.utcnow)
 
     # リレーション

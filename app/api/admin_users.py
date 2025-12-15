@@ -81,7 +81,8 @@ async def delete_user(
     db: AsyncSession = Depends(get_db),
     admin_user=Depends(deps.get_admin_user),  # noqa: B008
 ):
-    await admin_user_service.soft_delete_user(db, user_id, reason="manual delete from admin UI")
+    # 物理削除（DBから完全に削除）
+    await admin_user_service.hard_delete_user(db, user_id)
     return UserDeleteResponse(detail="deleted")
 
 

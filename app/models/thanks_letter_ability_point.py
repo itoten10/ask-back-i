@@ -1,5 +1,5 @@
 """感謝の手紙と非認知能力の関連モデル"""
-from sqlalchemy import BigInteger, Column, ForeignKey, Index, Integer
+from sqlalchemy import BigInteger, Column, ForeignKey, Index, DECIMAL
 from sqlalchemy.orm import relationship
 
 from app.models.base import Base
@@ -17,7 +17,7 @@ class ThanksLetterAbilityPoint(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     thanks_letter_id = Column(BigInteger, ForeignKey("thanks_letters.id", ondelete="CASCADE"), nullable=False)
     ability_id = Column(BigInteger, ForeignKey("non_cog_abilities.id", ondelete="CASCADE"), nullable=False)
-    points = Column(Integer, nullable=False, default=1, server_default="1")
+    points = Column(DECIMAL(5, 1), nullable=False, default=1.5, server_default="1.5")
 
     # リレーション
     thanks_letter = relationship("ThanksLetter", back_populates="ability_points")

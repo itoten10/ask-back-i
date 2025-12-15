@@ -113,20 +113,6 @@ async def login_with_local(
         await db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-    if user.role == RoleEnum.student:
-        await login_log_repository.create_login_log(
-            db,
-            user_id=user.id,
-            auth_type=AuthTypeEnum.local,
-            success=False,
-            failure_reason="STUDENT_LOCAL_LOGIN_NOT_ALLOWED",
-            ip_address=ip_address,
-            user_agent=user_agent,
-            login_at=login_at,
-        )
-        await db.commit()
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid credentials")
-
     if user.is_deleted or not user.is_active:
         await login_log_repository.create_login_log(
             db,

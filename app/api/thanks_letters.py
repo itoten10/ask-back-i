@@ -30,6 +30,10 @@ async def create_thanks_letter(
     if not receiver or receiver.is_deleted or not receiver.is_active:
         raise HTTPException(status_code=404, detail="Receiver not found")
 
+    # 管理者には感謝の手紙を送れない
+    if receiver.role == RoleEnum.admin:
+        raise HTTPException(status_code=400, detail="管理者には感謝の手紙を送ることはできません")
+
     # 感謝の手紙を作成
     letter = ThanksLetter(
         sender_user_id=current_user.id,
@@ -183,13 +187,14 @@ async def get_users_for_letter(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> List[dict]:
-    """感謝の手紙を送信できるユーザー一覧を取得（自分以外の有効なユーザー）"""
+    """感謝の手紙を送信できるユーザー一覧を取得（自分以外の有効なユーザー、管理者を除く）"""
     stmt = (
         select(User)
         .where(
             User.id != current_user.id,
             User.is_active == True,
             User.is_deleted == False,
+            User.role != RoleEnum.admin,  # 管理者を除外
         )
         .order_by(User.full_name)
     )
