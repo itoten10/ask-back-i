@@ -195,23 +195,23 @@ async def get_non_cognitive_abilities(
         sent_letters_count = sent_letters_result.scalar() or 0
 
         # 実際のDBから能力スコアを集計
-        # 投稿から選択された能力をカウント
-        post_ability_counts = {}
+        # 投稿から取得した能力ポイントを合計
+        post_ability_scores = {}
         for ability in all_abilities:
-            count_stmt = select(func.count(PostAbilityPoint.id)).select_from(PostAbilityPoint).join(
+            sum_stmt = select(func.coalesce(func.sum(PostAbilityPoint.point), 0)).select_from(PostAbilityPoint).join(
                 Post, PostAbilityPoint.post_id == Post.id
             ).where(
                 Post.user_id == student.id,
                 Post.deleted_at.is_(None),
                 PostAbilityPoint.ability_id == ability.id
             )
-            count_result = await db.execute(count_stmt)
-            post_ability_counts[ability.code] = count_result.scalar() or 0
+            sum_result = await db.execute(sum_stmt)
+            post_ability_scores[ability.code] = float(sum_result.scalar() or 0)
 
-        # 受信した感謝の手紙から選択された能力をカウント（受信者の能力として記録）
-        letter_ability_counts = {}
+        # 受信した感謝の手紙から取得した能力ポイントを合計（受信者の能力として記録）
+        letter_ability_scores = {}
         for ability in all_abilities:
-            count_stmt = select(func.count(ThanksLetterAbilityPoint.id)).select_from(
+            sum_stmt = select(func.coalesce(func.sum(ThanksLetterAbilityPoint.points), 0)).select_from(
                 ThanksLetterAbilityPoint
             ).join(
                 ThanksLetter, ThanksLetterAbilityPoint.thanks_letter_id == ThanksLetter.id
@@ -219,16 +219,14 @@ async def get_non_cognitive_abilities(
                 ThanksLetter.receiver_user_id == student.id,
                 ThanksLetterAbilityPoint.ability_id == ability.id
             )
-            count_result = await db.execute(count_stmt)
-            letter_ability_counts[ability.code] = count_result.scalar() or 0
+            sum_result = await db.execute(sum_stmt)
+            letter_ability_scores[ability.code] = float(sum_result.scalar() or 0)
 
-        # スコア計算（投稿での選択 + 受信した手紙での選択）
-        # 1回選択 = 1点として計算
+        # スコア計算（投稿での能力ポイント + 受信した手紙での能力ポイント）
         abilities_scores = {}
         for ability in all_abilities:
-            total_count = post_ability_counts[ability.code] + letter_ability_counts[ability.code]
-            score = total_count * 1
-            abilities_scores[ability.code] = score
+            total_score = post_ability_scores[ability.code] + letter_ability_scores[ability.code]
+            abilities_scores[ability.code] = round(total_score, 1)
 
         ability_data.append({
             "user_id": student.id,
