@@ -23,8 +23,10 @@ class ThanksLetterResponse(BaseModel):
     id: int
     sender_user_id: int
     sender_name: str
+    sender_avatar_url: str | None
     receiver_user_id: int
     receiver_name: str
+    receiver_avatar_url: str | None
     content_1: str
     content_2: str | None
     created_at: datetime
