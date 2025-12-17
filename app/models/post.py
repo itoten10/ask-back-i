@@ -105,6 +105,7 @@ class Post(Base):
     # リレーション
     user: Mapped["User"] = relationship("User", back_populates="posts")  # type: ignore
     ability_points: Mapped[list["PostAbilityPoint"]] = relationship("PostAbilityPoint", back_populates="post")  # type: ignore
+    likes: Mapped[list["PostLike"]] = relationship("PostLike", back_populates="post")  # type: ignore
 
 
 class UserPeriodPostsCache(Base):

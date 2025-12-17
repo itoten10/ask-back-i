@@ -38,6 +38,36 @@ async def get_current_user(
     return user
 
 
+async def get_current_user_optional(
+    credentials: HTTPAuthorizationCredentials = Depends(auth_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> User | None:
+    """認証情報がある場合はユーザーを返し、ない場合はNoneを返す"""
+    if not credentials or credentials.scheme.lower() != "bearer":
+        return None
+
+    try:
+        payload = decode_access_token(credentials.credentials)
+        user_id = payload.get("sub")
+        session_token = payload.get("session_token")
+        if not user_id or not session_token:
+            return None
+
+        session = await get_session_by_token(db, session_token)
+        if not session or session.revoked_at or session.user_id != int(user_id):
+            return None
+        if session.expires_at < now_utc():
+            return None
+
+        user = await db.get(User, int(user_id))
+        if not user or user.is_deleted or not user.is_active:
+            return None
+
+        return user
+    except Exception:
+        return None
+
+
 async def get_admin_user(
     current_user: User = Depends(get_current_user),
 ) -> User:

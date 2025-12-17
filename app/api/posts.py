@@ -1,14 +1,16 @@
 """投稿API"""
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Header
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_current_user_optional
 from app.core.database import get_db
 from app.models.post import Post
 from app.models.post_ability_point import PostAbilityPoint
+from app.models.post_like import PostLike
 from app.models.non_cog_ability import NonCogAbility
 from app.models.user import User, RoleEnum
 from app.schemas.post import PostCreate, PostUpdate, PostResponse, PostListResponse
@@ -23,6 +25,7 @@ async def get_posts(
     limit: int = 20,
     user_id: int | None = None,
     db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
 ):
     """投稿一覧を取得（新しい順）。user_idを指定すると特定ユーザーの投稿のみ取得"""
     # 投稿とユーザー情報を結合して取得
@@ -48,6 +51,28 @@ async def get_posts(
     count_result = await db.execute(count_stmt)
     total = len(count_result.scalars().all())
 
+    # 各投稿のいいね数を取得
+    post_ids = [post.id for post in posts]
+    like_counts = {}
+    if post_ids:
+        like_count_stmt = (
+            select(PostLike.post_id, func.count(PostLike.id).label("count"))
+            .where(PostLike.post_id.in_(post_ids))
+            .group_by(PostLike.post_id)
+        )
+        like_count_result = await db.execute(like_count_stmt)
+        like_counts = {row.post_id: row.count for row in like_count_result}
+
+    # ログインユーザーがいいねした投稿を取得
+    user_likes = set()
+    if current_user and post_ids:
+        user_likes_stmt = select(PostLike.post_id).where(
+            PostLike.post_id.in_(post_ids),
+            PostLike.user_id == current_user.id
+        )
+        user_likes_result = await db.execute(user_likes_stmt)
+        user_likes = {row.post_id for row in user_likes_result}
+
     # レスポンス用にユーザー名とアバターURLを追加
     post_responses = []
     for post in posts:
@@ -64,6 +89,8 @@ async def get_posts(
             "updated_at": post.updated_at,
             "user_name": post.user.full_name if post.user else None,
             "user_avatar_url": post.user.avatar_url if post.user else None,
+            "like_count": like_counts.get(post.id, 0),
+            "liked_by_me": post.id in user_likes,
         }
         post_responses.append(PostResponse(**post_dict))
 
@@ -278,3 +305,96 @@ async def delete_post(
     await db.commit()
 
     return None
+
+
+@router.post("/{post_id}/like", status_code=status.HTTP_201_CREATED)
+async def like_post(
+    post_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """投稿にいいねする"""
+    # 投稿を取得
+    stmt = select(Post).where(Post.id == post_id, Post.deleted_at.is_(None))
+    result = await db.execute(stmt)
+    post = result.scalar_one_or_none()
+
+    if not post:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Post not found"
+        )
+
+    # 既にいいねしているか確認
+    existing_like_stmt = select(PostLike).where(
+        PostLike.post_id == post_id,
+        PostLike.user_id == current_user.id
+    )
+    existing_like_result = await db.execute(existing_like_stmt)
+    existing_like = existing_like_result.scalar_one_or_none()
+
+    if existing_like:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Already liked this post"
+        )
+
+    # いいねを作成
+    new_like = PostLike(
+        post_id=post_id,
+        user_id=current_user.id,
+        created_at=datetime.utcnow()
+    )
+    db.add(new_like)
+    await db.commit()
+
+    # いいね数を取得
+    like_count_stmt = select(func.count(PostLike.id)).where(PostLike.post_id == post_id)
+    like_count_result = await db.execute(like_count_stmt)
+    like_count = like_count_result.scalar()
+
+    return {"post_id": post_id, "like_count": like_count, "liked_by_me": True}
+
+
+@router.delete("/{post_id}/like", status_code=status.HTTP_200_OK)
+async def unlike_post(
+    post_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """投稿のいいねを取り消す"""
+    # 投稿を取得
+    stmt = select(Post).where(Post.id == post_id, Post.deleted_at.is_(None))
+    result = await db.execute(stmt)
+    post = result.scalar_one_or_none()
+
+    if not post:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Post not found"
+        )
+
+    # いいねを取得
+    like_stmt = select(PostLike).where(
+        PostLike.post_id == post_id,
+        PostLike.user_id == current_user.id
+    )
+    like_result = await db.execute(like_stmt)
+    like = like_result.scalar_one_or_none()
+
+    if not like:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You haven't liked this post"
+        )
+
+    # いいねを削除
+    await db.delete(like)
+    await db.commit()
+
+    # いいね数を取得
+    like_count_stmt = select(func.count(PostLike.id)).where(PostLike.post_id == post_id)
+    like_count_result = await db.execute(like_count_stmt)
+    like_count = like_count_result.scalar()
+
+    return {"post_id": post_id, "like_count": like_count, "liked_by_me": False}
