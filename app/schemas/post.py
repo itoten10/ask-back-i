@@ -46,6 +46,10 @@ class PostResponse(BaseModel):
     user_name: Optional[str] = None
     user_avatar_url: Optional[str] = None
 
+    # いいね情報
+    like_count: int = 0
+    liked_by_me: bool = False
+
     class Config:
         from_attributes = True
 
